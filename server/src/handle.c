@@ -23,6 +23,8 @@ void handle_connection(int client_socket)
         parse_cmd_param(line, cmd, arg);
 
         // 处理命令
+
+        // 3.1 登录
         if (logged_in == 0) // 尚未登录，其他命令均不合法
         {
             if (strcmp(cmd, "USER") == 0)
@@ -60,7 +62,7 @@ void handle_connection(int client_socket)
                     }
                     else
                     {
-                        send_response(client_socket, 430, "Invalid email format for password.");
+                        send_response(client_socket, 530, "Invalid email format for password.");
                     }
                     regfree(&regex);
                 }
@@ -71,11 +73,39 @@ void handle_connection(int client_socket)
             }
             else
             {
-                send_response(client_socket, 430, "Please login with USER and PASS.");
+                send_response(client_socket, 530, "Please login with USER and PASS.");
             }
         }
         else // 已登录状态下的其他命令处理
         {
+            // 3.5 其他系统命令处理
+            if (strcmp(cmd, "SYST") == 0)
+            {
+                send_response(client_socket, 215, "UNIX Type: L8");
+            }
+            else if (strcmp(cmd, "TYPE") == 0)
+            {
+                if (strcmp(arg, "I") == 0)
+                {
+                    send_response(client_socket, 200, "Type set to I.");
+                }
+                else
+                {
+                    // 对于 "TYPE A" 等其他类型，返回错误
+                    send_response(client_socket, 504, "Command not implemented for that parameter.");
+                }
+            }
+            else if (strcmp(cmd, "QUIT") == 0)
+            {
+                send_response(client_socket, 221, "Goodbye.");
+                break; // 退出循环，这将导致子进程结束，从而关闭连接
+                // TODO: 可以统计一下其它的数据在这里一并返回
+            }
+            else
+            {
+                // 对于其他未实现的命令
+                send_response(client_socket, 500, "Command not implemented.");
+            }
             // TODO: 处理其他FTP命令，如 LIST, RETR, STOR 等
         }
     }
