@@ -8,70 +8,85 @@
 #include <memory.h>
 #include <stdio.h>
 
-int main(int argc, char **argv) {
+int main(int argc, char **argv)
+{
 	int sockfd;
 	struct sockaddr_in addr;
 	char sentence[8192];
 	int len;
 	int p;
 
-	//´´½¨socket
-	if ((sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1) {
+	// åˆ›å»ºsocket
+	if ((sockfd = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)) == -1)
+	{
 		printf("Error socket(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
-	//ÉèÖÃÄ¿±êÖ÷»úµÄipºÍport
+	// è®¾ç½®æœåŠ¡å™¨åœ°å€ipå’Œport
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_port = 6789;
-	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) <= 0) {			//×ª»»ipµØÖ·:µã·ÖÊ®½øÖÆ-->¶ş½øÖÆ
+	if (inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr) <= 0)
+	{ // è½¬æ¢ipåœ°å€:ç‚¹åˆ†åè¿›åˆ¶-->äºŒè¿›åˆ¶
 		printf("Error inet_pton(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
-	//Á¬½ÓÉÏÄ¿±êÖ÷»ú£¨½«socketºÍÄ¿±êÖ÷»úÁ¬½Ó£©-- ×èÈûº¯Êı
-	if (connect(sockfd, (struct sockaddr*)&addr, sizeof(addr)) < 0) {
+	// è¿æ¥ç›®æ ‡ä¸»æœºï¼ˆå°†socketå’Œç›®æ ‡ä¸»æœºè¿æ¥ï¼‰-- é˜»å¡å‡½æ•°
+	if (connect(sockfd, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	{
 		printf("Error connect(): %s(%d)\n", strerror(errno), errno);
 		return 1;
 	}
 
-	//»ñÈ¡¼üÅÌÊäÈë
+	// è¯»å–stdinè¾“å…¥
 	fgets(sentence, 4096, stdin);
 	len = strlen(sentence);
 	sentence[len] = '\n';
 	sentence[len + 1] = '\0';
-	
-	//°Ñ¼üÅÌÊäÈëĞ´Èësocket
+
+	// å†™æ•°æ®åˆ°socket
 	p = 0;
-	while (p < len) {
-		int n = write(sockfd, sentence + p, len + 1 - p);		//writeº¯Êı²»±£Ö¤ËùÓĞµÄÊı¾İĞ´Íê£¬¿ÉÄÜÖĞÍ¾ÍË³ö
-		if (n < 0) {
+	while (p < len)
+	{
+		int n = write(sockfd, sentence + p, len + 1 - p); // writeå‡½æ•°ä¼šè¿”å›å®é™…å†™å…¥çš„å­—èŠ‚æ•°
+		if (n < 0)
+		{
 			printf("Error write(): %s(%d)\n", strerror(errno), errno);
 			return 1;
- 		} else {
+		}
+		else
+		{
 			p += n;
-		}			
+		}
 	}
 
-	//Õ¥¸Ésocket½ÓÊÕµ½µÄÄÚÈİ
+	// è¯»å–socketæ•°æ®
 	p = 0;
-	while (1) {
+	while (1)
+	{
 		int n = read(sockfd, sentence + p, 8191 - p);
-		if (n < 0) {
-			printf("Error read(): %s(%d)\n", strerror(errno), errno);	//read²»±£Ö¤Ò»´Î¶ÁÍê£¬¿ÉÄÜÖĞÍ¾ÍË³ö
+		if (n < 0)
+		{
+			printf("Error read(): %s(%d)\n", strerror(errno), errno); // è¯»å–é”™è¯¯
 			return 1;
-		} else if (n == 0) {
+		}
+		else if (n == 0)
+		{
 			break;
-		} else {
+		}
+		else
+		{
 			p += n;
-			if (sentence[p - 1] == '\n') {
+			if (sentence[p - 1] == '\n')
+			{
 				break;
 			}
 		}
 	}
 
-	//×¢Òâ£ºread²¢²»»á½«×Ö·û´®¼ÓÉÏ'\0'£¬ĞèÒªÊÖ¶¯Ìí¼Ó
+	// æ³¨æ„:readå‡½æ•°ä¼šå°†è¯»å–åˆ°çš„'\n'æ›¿æ¢ä¸º'\0'ï¼Œå› æ­¤éœ€è¦æ‰‹åŠ¨æ›¿æ¢
 	sentence[p - 1] = '\0';
 
 	printf("FROM SERVER: %s", sentence);
