@@ -1,4 +1,4 @@
 *.pdf
 .vscode/
-server
+ftpserver
 *.o

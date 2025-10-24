@@ -15,7 +15,7 @@ LDFLAGS =
 SRCDIR = src
 
 # 目标文件（可执行文件）的名称
-TARGET = server
+TARGET = ftpserver
 
 # 所有的 .c 源文件
 SRCS = $(SRCDIR)/main.c $(SRCDIR)/handle.c $(SRCDIR)/utils.c $(SRCDIR)/connect.c $(SRCDIR)/file.c

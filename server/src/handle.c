@@ -1,6 +1,7 @@
 // #include "main.h"
 #include "utils.h"
 #include "connect.h"
+#include "file.h"
 #include <regex.h>
 
 // 处理每一个来自客户端的连接
@@ -124,25 +125,11 @@ void handle_connection(int client_socket)
             // 3.3 文件传输命令处理
             else if (strcmp(cmd, "RETR") == 0)
             {
-                // TODO: 实现RETR命令处理
-                int data_socket = establish_data_connection(&session);
-                switch (data_socket)
-                {
-                case -2:
-                    send_response(client_socket, 415, "Not in connection mode. Use PORT or PASV first.");
-                    break;
-                case -1:
-                    send_response(client_socket, 425, "Data connection failed.");
-                    break;
-                case 0:
-                    // TODO: 这里实现文件传输逻辑
-                default:
-                    break;
-                }
+                handle_retr_command(client_socket, &session, arg);
             }
             else if (strcmp(cmd, "STOR") == 0)
             {
-                // TODO: 实现STOR命令处理
+                handle_stor_command(client_socket, &session, arg);
             }
 
             // 3.5 其他系统命令处理
