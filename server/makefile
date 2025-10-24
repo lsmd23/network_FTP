@@ -18,7 +18,7 @@ SRCDIR = src
 TARGET = ftpserver
 
 # 所有的 .c 源文件
-SRCS = $(SRCDIR)/main.c $(SRCDIR)/handle.c $(SRCDIR)/utils.c
+SRCS = $(SRCDIR)/main.c $(SRCDIR)/handle.c $(SRCDIR)/utils.c $(SRCDIR)/connect.c
 
 # 根据 .c 文件自动生成 .o 目标文件的列表
 OBJS = $(SRCS:.c=.o)

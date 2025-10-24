@@ -1,5 +1,6 @@
 // #include "main.h"
 #include "utils.h"
+#include "connect.h"
 #include <regex.h>
 
 // 处理每一个来自客户端的连接
@@ -78,8 +79,45 @@ void handle_connection(int client_socket)
         }
         else // 已登录状态下的其他命令处理
         {
+            // 初始化一个会话状态结构体
+            connection_S2C session;
+            memset(&session, 0, sizeof(session));
+
+            // 3.2 连接模式
+            if (strcmp(cmd, "PORT") == 0) // 处理PORT命令
+            {
+                if (handle_port_command(client_socket, arg, &session) == 0)
+                    send_response(client_socket, 200, "PORT command successful.");
+                else
+                    send_response(client_socket, 501, "Syntax error in parameters or arguments.");
+            }
+            else if (strcmp(cmd, "PASV") == 0) // TODO: 处理PASV命令
+            {
+                if (handle_pasv_command(client_socket, &session) == 0)
+                {
+                    // 构造PASV响应
+                    struct sockaddr_in *addr = &session.data_addr;
+                    uint32_t ip = ntohl(addr->sin_addr.s_addr);
+                    uint16_t port = ntohs(addr->sin_port);
+                    char pasv_response[128];
+                    snprintf(pasv_response, sizeof(pasv_response),
+                             "Entering Passive Mode (%u,%u,%u,%u,%u,%u).",
+                             (ip >> 24) & 0xFF,
+                             (ip >> 16) & 0xFF,
+                             (ip >> 8) & 0xFF,
+                             ip & 0xFF,
+                             (port >> 8) & 0xFF,
+                             port & 0xFF);
+                    send_response(client_socket, 227, pasv_response);
+                }
+                else
+                {
+                    send_response(client_socket, 425, "Can't open passive connection.");
+                }
+            }
+
             // 3.5 其他系统命令处理
-            if (strcmp(cmd, "SYST") == 0)
+            else if (strcmp(cmd, "SYST") == 0)
             {
                 send_response(client_socket, 215, "UNIX Type: L8");
             }
