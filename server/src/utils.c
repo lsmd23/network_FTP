@@ -17,6 +17,38 @@ void send_response(int client_socket, int code, const char *message)
 }
 
 /**
+ * 向指定的客户端发送多行响应消息
+ * @param client_socket 客户端套接字
+ * @param code 响应代码
+ * @param messages 响应消息数组，以 NULL 结尾
+ */
+void send_multiline_response(int client_socket, int code, const char *messages[])
+{
+    char response[LINE_MAX_SIZE];
+    int i = 0;
+    // 发送除最后一行外的所有行，格式为 "%d-%s\r\n"
+    for (i = 0; messages[i] != NULL && messages[i + 1] != NULL; i++)
+    {
+        snprintf(response, sizeof(response), "%d-%s\r\n", code, messages[i]);
+        if (send(client_socket, response, strlen(response), 0) == -1)
+        {
+            perror("send failed");
+            return;
+        }
+    }
+    // 发送最后一行
+    if (messages[i] != NULL)
+    {
+        snprintf(response, sizeof(response), "%d %s\r\n", code, messages[i]);
+        if (send(client_socket, response, strlen(response), 0) == -1)
+        {
+            perror("send failed");
+            return;
+        }
+    }
+}
+
+/**
  * 从客户端套接字读取一行数据，并存储到缓冲区
  * @param client_socket 客户端套接字
  * @param buffer 存储读取数据的缓冲区

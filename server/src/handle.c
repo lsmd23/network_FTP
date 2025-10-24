@@ -10,6 +10,12 @@ void handle_connection(int client_socket)
     int awaiting_password = 0;                              // 等待密码标志
     char line[LINE_MAX_SIZE], cmd[128], arg[LINE_MAX_SIZE]; // 命令和参数缓冲区
 
+    // 初始化一个会话状态结构体
+    connection session;
+    memset(&session, 0, sizeof(session));
+    session.client_data_socket = -1;
+    session.mode = DATA_CONN_MODE_NONE; // 初始无数据连接模式
+
     // 发送欢迎消息
     send_response(client_socket, 220, "Anonymous FTP server ready.");
 
@@ -56,8 +62,13 @@ void handle_connection(int client_socket)
                     regcomp(&regex, "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$", REG_EXTENDED);
                     if (regexec(&regex, arg, 0, NULL, 0) == 0)
                     {
-                        send_response(client_socket, 230, "Login successful.");
-                        send_response(client_socket, 230, "Welcome to the FTP server! You are logged in as anonymous.");
+
+                        const char *lines[] = {
+                            "Login successful.",
+                            "Welcome to the FTP server! You are logged in as anonymous.",
+                            NULL};
+                        // int num_lines = sizeof(lines) / sizeof(lines[0]);
+                        send_multiline_response(client_socket, 230, lines);
                         logged_in = 1;         // 设置为已登录状态
                         awaiting_password = 0; // 登录完成
                     }
@@ -79,10 +90,6 @@ void handle_connection(int client_socket)
         }
         else // 已登录状态下的其他命令处理
         {
-            // 初始化一个会话状态结构体
-            connection_S2C session;
-            memset(&session, 0, sizeof(session));
-
             // 3.2 连接模式
             if (strcmp(cmd, "PORT") == 0) // 处理PORT命令
             {
@@ -91,29 +98,51 @@ void handle_connection(int client_socket)
                 else
                     send_response(client_socket, 501, "Syntax error in parameters or arguments.");
             }
-            else if (strcmp(cmd, "PASV") == 0) // TODO: 处理PASV命令
+            else if (strcmp(cmd, "PASV") == 0) // 处理PASV命令
             {
-                if (handle_pasv_command(client_socket, &session) == 0)
+                switch (handle_pasv_command(client_socket, &session))
                 {
-                    // 构造PASV响应
-                    struct sockaddr_in *addr = &session.data_addr;
-                    uint32_t ip = ntohl(addr->sin_addr.s_addr);
-                    uint16_t port = ntohs(addr->sin_port);
-                    char pasv_response[128];
-                    snprintf(pasv_response, sizeof(pasv_response),
-                             "Entering Passive Mode (%u,%u,%u,%u,%u,%u).",
-                             (ip >> 24) & 0xFF,
-                             (ip >> 16) & 0xFF,
-                             (ip >> 8) & 0xFF,
-                             ip & 0xFF,
-                             (port >> 8) & 0xFF,
-                             port & 0xFF);
-                    send_response(client_socket, 227, pasv_response);
+                case -1:
+                    send_response(client_socket, 425, "Can't create socket for PASV.");
+                    break;
+                case -2:
+                    send_response(client_socket, 425, "Can't bind PASV socket.");
+                    break;
+                case -3:
+                    send_response(client_socket, 425, "Can't get PASV port.");
+                    break;
+                case -4:
+                    send_response(client_socket, 425, "Can't listen on PASV socket.");
+                    break;
+                case -5:
+                    send_response(client_socket, 425, "Can't get server address.");
+                default: // 成功连接
+                    break;
                 }
-                else
+            }
+
+            // 3.3 文件传输命令处理
+            else if (strcmp(cmd, "RETR") == 0)
+            {
+                // TODO: 实现RETR命令处理
+                int data_socket = establish_data_connection(&session);
+                switch (data_socket)
                 {
-                    send_response(client_socket, 425, "Can't open passive connection.");
+                case -2:
+                    send_response(client_socket, 415, "Not in connection mode. Use PORT or PASV first.");
+                    break;
+                case -1:
+                    send_response(client_socket, 425, "Data connection failed.");
+                    break;
+                case 0:
+                    // TODO: 这里实现文件传输逻辑
+                default:
+                    break;
                 }
+            }
+            else if (strcmp(cmd, "STOR") == 0)
+            {
+                // TODO: 实现STOR命令处理
             }
 
             // 3.5 其他系统命令处理

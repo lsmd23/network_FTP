@@ -14,7 +14,8 @@ typedef struct
     int client_data_socket;       // 客户端数据连接socket
     struct sockaddr_in data_addr; // 客户端数据连接地址
     data_conn_mode_t mode;        // 数据连接模式
-} connection_S2C;
+} connection;
 
-int handle_port_command(int client_socket, const char *arg, connection_S2C *session);
-int handle_pasv_command(int client_socket, connection_S2C *session);
+int handle_port_command(int client_socket, const char *arg, connection *session);
+int handle_pasv_command(int client_socket, connection *session);
+int establish_data_connection(connection *session);

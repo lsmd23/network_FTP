@@ -16,14 +16,20 @@ class TestServer:
         self.major  = 8
     
     def build(self):
-        proc = subprocess.Popen('make', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # 在 server 目录下执行 make
+        proc = subprocess.Popen(['make'], cwd='server', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         have_error = False
         while True:
-            stdout = proc.stdout.readline()
-            stderr = proc.stderr.readline()
-            if not (stdout and stderr):
+            stdout_line = proc.stdout.readline()
+            stderr_line = proc.stderr.readline()
+            if not stdout_line and not stderr_line:
                 break
-            if stdout and '-Wall' not in stdout:
+            
+            # 将 bytes 解码为 str
+            stdout = stdout_line.decode()
+            stderr = stderr_line.decode()
+
+            if stdout and 'gcc' in stdout and '-Wall' not in stdout:
                 print('No -Wall argument')
                 print('Your credit is 0')
                 exit(0)
@@ -41,10 +47,11 @@ class TestServer:
         f.close()
 
     def test_public(self, port=21, directory='/tmp'):
+        # 使用正确的路径 ./server/server 启动服务器
         if port == 21 and directory == '/tmp':
-            server = subprocess.Popen(['sudo', './server'], stdout=subprocess.PIPE)
+            server = subprocess.Popen(['sudo', './server/server'], stdout=subprocess.PIPE)
         else:
-            server = subprocess.Popen(['sudo', './server', '-port', '%d' % port, '-root', directory], stdout=subprocess.PIPE)
+            server = subprocess.Popen(['sudo', './server/server', '-port', '%d' % port, '-root', directory], stdout=subprocess.PIPE)
         time.sleep(0.1)
         try:
             ftp = FTP()
@@ -54,7 +61,8 @@ class TestServer:
             else:
                 self.credit += self.minor
             # login
-            if not ftp.login().startswith('230'):
+            # 为 login 提供一个符合电子邮件格式的密码
+            if not ftp.login('anonymous', 'test@test.com').startswith('230'):
                 print('You missed response 230')
             else:
                 self.credit += self.minor
@@ -85,7 +93,8 @@ class TestServer:
             # PASV upload
             ftp2 = FTP()
             ftp2.connect('127.0.0.1', port)
-            ftp2.login()
+            # 同样修改这里的 login
+            ftp2.login('anonymous', 'test@test.com')
             filename = 'test%d.data' % random.randint(100, 200)
             self.create_test_file(filename)
             if not ftp2.storbinary('STOR %s' % filename, open(filename, 'rb')).startswith('226'):
@@ -103,18 +112,23 @@ class TestServer:
             else:
                 self.credit += self.minor
             ftp2.quit()
-            server.kill()
+            # 使用 sudo 权限杀死服务器进程
+            subprocess.run(['sudo', 'kill', str(server.pid)])
 
         except Exception as e:
             print('Exception occurred:', e)
         
-        server.kill()
+        # 确保在异常情况下也能用 sudo 杀死服务器
+        if server.poll() is None: # 检查进程是否还在运行
+            subprocess.run(['sudo', 'kill', str(server.pid)])
 
 if __name__ == "__main__":
+    # 在开始前，清理可能残留的旧进程
+    subprocess.run("sudo pkill -f './server/server' || true", shell=True)
     test = TestServer()
     test.build()
     # Test 1
-    test.test_public()
+    test.test_public(port=10021)
     # Test 2
     port = random.randint(2000, 3000)
     directory = ''.join(random.choice(string.ascii_letters) for x in range(10))
@@ -124,7 +138,8 @@ if __name__ == "__main__":
     test.test_public(port, directory)
     shutil.rmtree(directory)
     # Clean
-    subprocess.run(['make', 'clean'], stdout=subprocess.PIPE)
+    # 在 server 目录下执行 make clean
+    subprocess.run(['make', 'clean'], cwd='server', stdout=subprocess.PIPE)
     # Result
     if test.credit < 0: test.credit = 0
     print(f'Your credit is {test.credit}')

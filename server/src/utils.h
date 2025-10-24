@@ -15,5 +15,6 @@
 #define LINE_MAX_SIZE 1024   // 最大行长度
 
 void send_response(int client_socket, int code, const char *message);
+void send_multiline_response(int client_socket, int code, const char *messages[]);
 int read_line(int client_socket, char *buffer, size_t max_len);
 void parse_cmd_param(const char *line, char *cmd, char *arg);
