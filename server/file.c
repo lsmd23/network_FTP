@@ -2,6 +2,7 @@
 #include <regex.h>
 #include <stdlib.h>
 #include <fcntl.h>
+#include <dirent.h>
 
 /**
  * 检查给定的相对路径相对于给定的根目录是否安全，防止目录遍历攻击
@@ -393,67 +394,106 @@ int handle_rmd_command(int client_socket, connection *session, const char *dirna
 }
 
 /**
- * 处理 LIST 命令，列出目录内容
+ * 处理 LIST 命令，将目录内容以 ls -l 格式发送给客户端
  * @param client_socket 客户端控制连接
  * @param session 会话状态
- * @param path 客户端请求列出的目录路径，可以是相对路径或绝对路径
+ * @param arg 客户端请求列出的目录路径 (可选)
  * @return 0 表示成功处理, -1 表示处理失败
  */
-// int handle_list_command(int client_socket, connection *session, const char *path)
-// {
-//     // 构建要列出的目录路径
-//     char list_path[PATH_MAX];
-//     char *current_dir = getcwd(NULL, 0);
-//     if (path[0] == '/')
-//     {
-//         // 绝对路径
-//         snprintf(list_path, sizeof(list_path), "%s", path);
-//     }
-//     else
-//     {
-//         // 相对路径
-//         snprintf(list_path, sizeof(list_path), "%s/%s", current_dir, path);
-//     }
+int handle_list_command(int client_socket, connection *session, const char *arg)
+{
+    char command[PATH_MAX + 16]; // "ls -l " + path + null terminator
+    char target_path[PATH_MAX];
 
-//     // 安全检查
-//     if (!is_path_safe(session->root_dir, list_path))
-//     {
-//         send_response(client_socket, 550, "Permission denied or invalid path.");
-//         return -1;
-//     }
+    // 1. 确定要列出的目标路径
+    // 如果客户端没有提供路径参数，则列出当前工作目录
+    if (arg == NULL || strlen(arg) == 0)
+    {
+        // getcwd 已经返回了绝对路径
+        if (getcwd(target_path, sizeof(target_path)) == NULL)
+        {
+            send_response(client_socket, 550, "Failed to get current directory.");
+            return -1;
+        }
+    }
+    else
+    {
+        // 如果客户端提供了路径，需要解析
+        if (arg[0] == '/')
+        {
+            // 绝对路径
+            strncpy(target_path, arg, sizeof(target_path) - 1);
+        }
+        else
+        {
+            // 相对路径，需要拼接
+            char cwd[PATH_MAX];
+            if (getcwd(cwd, sizeof(cwd)) == NULL)
+            {
+                send_response(client_socket, 550, "Failed to get current directory.");
+                return -1;
+            }
 
-//     // 发送初始响应
-//     send_response(client_socket, 150, "Here comes the directory listing.");
+            // --- 核心修复：检查 snprintf 的返回值 ---
+            int required_len = snprintf(target_path, sizeof(target_path), "%s/%s", cwd, arg);
+            if (required_len < 0 || required_len >= (int)sizeof(target_path))
+            {
+                // 如果 snprintf 发生错误或输出被截断，则路径太长
+                send_response(client_socket, 550, "Resulting path is too long.");
+                return -1;
+            }
+            // --- 修复结束 ---
+        }
+    }
+    target_path[PATH_MAX - 1] = '\0'; // 确保字符串以 null 结尾
 
-//     // 建立数据连接
-//     int data_socket = establish_data_connection(session);
-//     if (data_socket < 0)
-//     {
-//         send_response(client_socket, 425, "Failed to establish data connection.");
-//         return -1;
-//     }
+    // 2. 安全检查
+    if (!is_path_safe(session->root_dir, target_path))
+    {
+        send_response(client_socket, 550, "Permission denied or invalid path.");
+        return -1;
+    }
 
-//     // 执行 ls -l 命令并将输出发送到数据连接
-//     FILE *ls_pipe = popen((char *)malloc(snprintf(NULL, 0, "ls -l \"%s\"", list_path) + 1), "r");
-//     if (ls_pipe == NULL)
-//     {
-//         close(data_socket);
-//         send_response(client_socket, 550, "Failed to list directory.");
-//         return -1;
-//     }
+    // 3. 发送初始响应
+    send_response(client_socket, 150, "Here comes the directory listing.");
 
-//     char buffer[BUFFER_SIZE];
-//     size_t bytes_read;
-//     while ((bytes_read = fread(buffer, 1, sizeof(buffer), ls_pipe)) > 0)
-//     {
-//         send(data_socket, buffer, bytes_read, 0);
-//     }
+    // 4. 建立数据连接
+    int data_socket = establish_data_connection(session);
+    if (data_socket < 0)
+    {
+        send_response(client_socket, 425, "Failed to establish data connection.");
+        return -1;
+    }
 
-//     pclose(ls_pipe);
-//     close(data_socket);
-//     session->mode = DATA_CONN_MODE_NONE; // 重置数据连接模式
+    // 5. 构造并执行 ls -l 命令
+    // 使用 -a 显示隐藏文件，-l 显示详细信息
+    snprintf(command, sizeof(command), "ls -al \"%s\"", target_path);
+    FILE *pipe = popen(command, "r");
+    if (!pipe)
+    {
+        close(data_socket);
+        send_response(client_socket, 550, "Failed to execute list command.");
+        return -1;
+    }
 
-//     // 最终响应
-//     send_response(client_socket, 226, "Directory send OK.");
-//     return 0;
-// }
+    // 6. 将命令输出通过数据连接发送
+    char buffer[BUFFER_SIZE];
+    size_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), pipe)) > 0)
+    {
+        if (send(data_socket, buffer, bytes_read, 0) < 0)
+        {
+            // 发送失败，跳出循环
+            break;
+        }
+    }
+
+    // 7. 清理和收尾
+    pclose(pipe);
+    close(data_socket);
+    session->mode = DATA_CONN_MODE_NONE; // 重置数据连接模式
+
+    // 8. 发送最终响应
+    send_response(client_socket, 226, "Directory send OK.");
+    return 0;
+}

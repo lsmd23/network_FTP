@@ -15,4 +15,4 @@ int handle_cwd_command(int client_socket, connection *session, const char *path)
 int handle_pwd_command(int client_socket, connection *session);
 int handle_mkd_command(int client_socket, connection *session, const char *dirname);
 int handle_rmd_command(int client_socket, connection *session, const char *dirname);
-// int handle_list_command(int client_socket, connection *session, const char *path);
+int handle_list_command(int client_socket, connection *session, const char *path);

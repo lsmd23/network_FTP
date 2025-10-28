@@ -154,10 +154,10 @@ void handle_connection(int client_socket, const char *root_dir)
             {
                 handle_rmd_command(client_socket, &session, arg);
             }
-            // else if (strcmp(cmd, "LIST") == 0)
-            // {
-            //     handle_list_command(client_socket, &session, arg);
-            // }
+            else if (strcmp(cmd, "LIST") == 0)
+            {
+                handle_list_command(client_socket, &session, arg);
+            }
 
             // 3.5 其他系统命令处理
             else if (strcmp(cmd, "SYST") == 0)

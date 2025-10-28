@@ -170,6 +170,60 @@ def main():
                 # 打印完成响应（通常 226，可能是多行）
                 post = recv_response(ctrl_file)
 
+            elif upper.startswith("LIST"):
+                # 目录列表流程
+                send_cmd(ctrl, cmd)
+
+                # 对于主动模式，必须先准备好接受连接
+                data_sock = None
+                if active_listener:
+                    data_sock, _peer = active_listener.accept()
+
+                # 读取服务器的初步响应（150）
+                pre = recv_response(ctrl_file)
+                
+                # 检查初步响应是否成功。如果失败（例如服务器直接返回5xx错误），则直接继续
+                if not pre or not (pre[0].startswith("150") or pre[0].startswith("125")):
+                    if data_sock: data_sock.close()
+                    continue
+
+                # 检查客户端自身是否能建立连接
+                can_connect = active_listener or pasv_target
+                if not can_connect:
+                    # 如果客户端没有连接方式，我们知道服务器接下来会发送一个错误码（如425）
+                    # 我们必须读取这个错误码来完成这次事务，而不是直接 continue
+                    if data_sock: data_sock.close() # 如果 accept 碰巧成功了，关闭它
+                    _ = recv_response(ctrl_file) # 读取并打印服务器的最终错误响应
+                    continue # 现在可以安全地继续了
+
+                try:
+                    # 对于被动模式，在这里建立连接
+                    if pasv_target:
+                        data_sock = socket.create_connection(pasv_target)
+
+                    # 此时 data_sock 应该已经建立
+                    if not data_sock:
+                        # 理论上不应该到这里，但作为保险
+                        _ = recv_response(ctrl_file)
+                        continue
+
+                    # 接收数据并直接打印到屏幕
+                    while True:
+                        buf = data_sock.recv(8192)
+                        if not buf:
+                            break
+                        print(buf.decode(ENC, errors='ignore'), end='', flush=True)
+                finally:
+                    if data_sock:
+                        data_sock.close()
+                    if active_listener:
+                        active_listener.close()
+                        active_listener = None
+                    pasv_target = None
+
+                # 打印传输完成的最终响应（226）
+                post = recv_response(ctrl_file)
+
             else:
                 # 其他命令透传并打印完整响应
                 send_cmd(ctrl, cmd)
