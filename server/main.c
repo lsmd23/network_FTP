@@ -36,6 +36,14 @@ int main(int argc, char **argv)
         exit(EXIT_FAILURE);
     }
 
+    // 获取绝对路径
+    char abs_root[PATH_MAX];
+    if (getcwd(abs_root, sizeof(abs_root)) == NULL)
+    {
+        perror("getcwd failed!");
+        exit(EXIT_FAILURE);
+    }
+
     // 创建监听socket
     if ((listen_socket = socket(AF_INET, SOCK_STREAM, 0)) == -1)
     {
@@ -89,7 +97,7 @@ int main(int argc, char **argv)
         {
             // 子进程：处理一个连接
             close(listen_socket);
-            handle_connection(connected_socket, root_dir);
+            handle_connection(connected_socket, abs_root);
             close(connected_socket);
             _exit(0);
         }

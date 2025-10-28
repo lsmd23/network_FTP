@@ -9,6 +9,7 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 
 #define CONTROL_PORT 21      // 控制连接端口
 #define WAITING_QUEUE_SIZE 5 // 监听队列大小

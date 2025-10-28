@@ -8,7 +8,11 @@
 
 // static void ensure_session_cwd(connection *session);
 // static void normalize_virtual_path(const char *base, const char *input, char *out, size_t outsz);
-int is_path_safe(const char *path);
+int is_path_safe(const char *root, const char *path);
 int handle_retr_command(int client_socket, connection *session, const char *filename);
 int handle_stor_command(int client_socket, connection *session, const char *filename);
-// int handle_cwd_command(int client_socket, const char *path);
+int handle_cwd_command(int client_socket, connection *session, const char *path);
+int handle_pwd_command(int client_socket, connection *session);
+int handle_mkd_command(int client_socket, connection *session, const char *dirname);
+int handle_rmd_command(int client_socket, connection *session, const char *dirname);
+// int handle_list_command(int client_socket, connection *session, const char *path);

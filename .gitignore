@@ -3,3 +3,4 @@
 ftpserver
 *.o
 *.data
+test_*

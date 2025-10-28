@@ -14,7 +14,8 @@ typedef struct
     int client_data_socket;       // 客户端数据连接socket
     struct sockaddr_in data_addr; // 客户端数据连接地址
     data_conn_mode_t mode;        // 数据连接模式
-    char cwd[PATH_MAX];           // 当前工作目录
+    char root_dir[PATH_MAX];      // FTP服务器根目录
+    // char cwd[PATH_MAX];           // 当前工作目录
 } connection;
 
 int handle_port_command(int client_socket, const char *arg, connection *session);

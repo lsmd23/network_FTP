@@ -1,143 +1,18 @@
 #include "file.h"
 #include <regex.h>
+#include <stdlib.h>
 #include <fcntl.h>
 
 /**
- * 确保会话的当前工作目录已初始化
- * 如果未初始化，则设置为根目录 "/"
- * @param session 会话指针
- */
-// static void ensure_session_cwd(connection *session)
-// {
-//     if (session == NULL)
-//         return;
-//     if (session->cwd[0] == '\0')
-//     {
-//         session->cwd[0] = '/';
-//         session->cwd[1] = '\0';
-//     }
-// }
-
-// /**
-//  * 规范化虚拟路径，处理 . 和 .. 组件
-//  * @param base 当前工作目录
-//  * @param input 输入路径（可能是相对或绝对路径）
-//  * @param out 输出缓冲区，用于存储规范化后的路径
-//  * @param outsz 输出缓冲区大小
-//  */
-// static void normalize_virtual_path(const char *base, const char *input, char *out, size_t outsz)
-// {
-//     // 选择起点：绝对路径用根 /，相对路径用 base
-//     const char *use_base = (input && input[0] == '/') ? "/" : (base && base[0] ? base : "/");
-
-//     // 合并 base 与 input
-//     char joined[PATH_MAX * 2];
-//     if (input && input[0] == '/')
-//     {
-//         snprintf(joined, sizeof(joined), "%s", input);
-//     }
-//     else if (input && input[0] != '\0')
-//     {
-//         if (strcmp(use_base, "/") == 0)
-//             snprintf(joined, sizeof(joined), "/%s", input);
-//         else
-//             snprintf(joined, sizeof(joined), "%s/%s", use_base, input);
-//     }
-//     else
-//     {
-//         snprintf(joined, sizeof(joined), "%s", use_base);
-//     }
-
-//     // 分词并用栈处理 . 和 ..
-//     char buf[PATH_MAX * 2];
-//     snprintf(buf, sizeof(buf), "%s", joined);
-
-//     char *stack[PATH_MAX / 2];
-//     int top = 0;
-
-//     for (char *tok = strtok(buf, "/"); tok; tok = strtok(NULL, "/"))
-//     {
-//         if (strcmp(tok, ".") == 0 || tok[0] == '\0')
-//         {
-//             continue;
-//         }
-//         else if (strcmp(tok, "..") == 0)
-//         {
-//             if (top > 0)
-//                 top--; // 不允许超出根
-//         }
-//         else
-//         {
-//             stack[top++] = tok;
-//         }
-//     }
-
-//     // 生成标准化虚拟路径
-//     if (top == 0)
-//     {
-//         snprintf(out, outsz, "/");
-//         return;
-//     }
-//     size_t pos = 0;
-//     out[0] = '\0';
-//     for (int i = 0; i < top; ++i)
-//     {
-//         int n = snprintf(out + pos, (pos < outsz ? outsz - pos : 0), "%s%s", (i == 0 ? "/" : "/"), stack[i]);
-//         if (n < 0)
-//             break;
-//         pos += (size_t)n;
-//         if (pos >= outsz)
-//             break;
-//     }
-//     if (pos >= outsz && outsz > 0)
-//         out[outsz - 1] = '\0';
-// }
-
-// /**
-//  * 将虚拟路径转换为文件系统路径：FTP根目录 + 虚拟路径
-//  * @param vpath 虚拟路径（必须以 / 开头），也即规范化后的路径
-//  * @param out 输出缓冲区，用于存储文件系统路径
-//  * @param outsz 输出缓冲区大小
-//  */
-// static int vpath_to_fspath(const char *vpath, char *out, size_t outsz)
-// {
-//     if (!vpath || vpath[0] != '/')
-//         return -1;
-//     if (strcmp(vpath, "/") == 0)
-//     {
-//         int n = snprintf(out, outsz, "%s", FTP_ROOT_DIR);
-//         return (n < 0 || n >= (int)outsz) ? -1 : 0;
-//     }
-//     int n = snprintf(out, outsz, "%s%s", FTP_ROOT_DIR, vpath);
-//     return (n < 0 || n >= (int)outsz) ? -1 : 0;
-// }
-
-// /**
-//  * 检查给定的文件系统路径是否在FTP根目录下
-//  * @param fspath 文件系统路径
-//  * @param real_out 输出缓冲区，用于存储解析后的真实路径
-//  * @param outsz 输出缓冲区大小
-//  */
-// static int safe_realpath_existing(const char *fspath, char *real_out, size_t outsz)
-// {
-//     char realbuf[PATH_MAX];
-//     if (!realpath(fspath, realbuf))
-//         return -1;
-//     size_t rootlen = strlen(FTP_ROOT_DIR);
-//     if (strncmp(realbuf, FTP_ROOT_DIR, rootlen) != 0)
-//         return -1;
-//     int n = snprintf(real_out, outsz, "%s", realbuf);
-//     return (n < 0 || n >= (int)outsz) ? -1 : 0;
-// }
-
-/**
- * 检查给定路径是否在FTP根目录下，通过模拟路径解析来防止目录遍历。
- * 规则：路径在解析过程中，深度不能为负数。
- *    例如 "dir/.." 是合法的 (深度 1 -> 0), 但 "../dir" 是非法的 (深度 0 -> -1)。
- * @param path 要检查的路径
+ * 检查给定的相对路径相对于给定的根目录是否安全，防止目录遍历攻击
+ *  - 对这组代码，root路径是在程序启动时确定的FTP根目录，一般为绝对路径
+ *  - 在运行过程中，因为CWD、PWD等的命令，实际工作目录不一定等于root
+ *  - path参数是绝对路径，表示待检查的文件路径
+ * @param root FTP服务器根目录（绝对路径）
+ * @param path 要检查的路径（绝对路径）
  * @return 如果路径安全则返回1，否则返回0
  */
-int is_path_safe(const char *path)
+int is_path_safe(const char *root, const char *path)
 {
     // strtok会修改字符串，所以我们必须在副本上操作
     char *path_copy = strdup(path);
@@ -147,37 +22,74 @@ int is_path_safe(const char *path)
         return 0;
     }
 
-    int depth = 0;
-    char *token = strtok(path_copy, "/");
-
-    while (token != NULL)
+    char *root_copy = strdup(root);
+    if (root_copy == NULL)
     {
-        // 忽略当前目录 "."
-        if (strcmp(token, ".") == 0)
-        {
-            // do nothing
-        }
-        // 遇到上级目录 ".."
-        else if (strcmp(token, "..") == 0)
-            depth--;
-        // 遇到普通目录
-        else
-            depth++;
-
-        // 关键检查：在任何时候，深度都不能小于0
-        if (depth < 0)
-        {
-            free(path_copy); // 清理内存
-            return 0;        // 不安全
-        }
-
-        // 获取下一个token
-        token = strtok(NULL, "/");
+        free(path_copy);
+        return 0;
     }
 
-    // 循环结束，如果深度从未小于0，则路径是安全的
-    free(path_copy); // 清理内存
-    return 1;
+    // 规范化路径：移除末尾的斜杠
+    size_t root_len = strlen(root_copy);
+    if (root_len > 1 && (root_copy[root_len - 1] == '/' || root_copy[root_len - 1] == '\\'))
+    {
+        root_copy[root_len - 1] = '\0';
+        root_len--;
+    }
+
+    // 将路径分解为组件，处理 "." 和 ".."
+    char normalized[1024] = {0};
+    char *components[256];
+    int count = 0;
+
+    // 分解路径
+    char *token = strtok(path_copy, "/\\");
+    while (token != NULL && count < 256)
+    {
+        if (strcmp(token, ".") == 0)
+        {
+            // 跳过当前目录
+        }
+        else if (strcmp(token, "..") == 0)
+        {
+            // 返回上一级目录
+            if (count > 0)
+            {
+                count--;
+            }
+        }
+        else
+        {
+            // 正常目录名
+            components[count++] = token;
+        }
+        token = strtok(NULL, "/\\");
+    }
+
+    // 重建规范化路径
+    normalized[0] = '\0';
+    for (int i = 0; i < count; i++)
+    {
+        strcat(normalized, "/");
+        strcat(normalized, components[i]);
+    }
+
+    // 如果路径为空，设置为根目录
+    if (normalized[0] == '\0')
+    {
+        strcpy(normalized, "/");
+    }
+
+    // 检查规范化后的路径是否以 root 开头
+    int is_safe = (strncmp(normalized, root_copy, root_len) == 0) &&
+                  (normalized[root_len] == '\0' ||
+                   normalized[root_len] == '/' ||
+                   normalized[root_len] == '\\');
+
+    free(path_copy);
+    free(root_copy);
+
+    return is_safe;
 }
 
 /**
@@ -190,13 +102,14 @@ int is_path_safe(const char *path)
 int handle_retr_command(int client_socket, connection *session, const char *filename)
 {
     char full_path[PATH_MAX];
-    int len = snprintf(full_path, sizeof(full_path), "%s/%s", session->cwd, filename);
+    char *current_dir = getcwd(NULL, 0);
+    int len = snprintf(full_path, sizeof(full_path), "%s/%s", current_dir, filename);
     if (len < 0 || len >= (int)sizeof(full_path))
     {
         send_response(client_socket, 550, "Filename is too long.");
         return -1;
     }
-    if (!is_path_safe(full_path))
+    if (!is_path_safe(session->root_dir, full_path))
     {
         send_response(client_socket, 550, "Permission denied or invalid path.");
         return -1;
@@ -273,8 +186,12 @@ int handle_retr_command(int client_socket, connection *session, const char *file
  */
 int handle_stor_command(int client_socket, connection *session, const char *filename)
 {
+    // 拼接文件的完整路径（绝对路径）
+    char *current_dir = getcwd(NULL, 0);
+    char full_path[PATH_MAX];
+    snprintf(full_path, sizeof(full_path), "%s/%s", current_dir, filename);
     // 1. 安全检查：路径是否合法
-    if (!is_path_safe(filename))
+    if (!is_path_safe(session->root_dir, full_path))
     {
         send_response(client_socket, 550, "Permission denied or invalid path.");
         return -1;
@@ -343,3 +260,200 @@ int handle_stor_command(int client_socket, connection *session, const char *file
 
     return 0;
 }
+
+/**
+ * 处理 CWD (Change Working Directory) 命令
+ * @param client_socket 客户端控制连接
+ * @param path 客户端请求切换到的目录路径，可以是相对路径或绝对路径
+ * @return 0 表示成功处理, -1 表示处理失败
+ */
+int handle_cwd_command(int client_socket, connection *session, const char *path)
+{
+    char new_dir[PATH_MAX];
+    // 分别处理绝对路径和相对路径
+    if (path[0] == '/')
+    {
+        // 绝对路径
+        if (is_path_safe(session->root_dir, path))
+        {
+            chdir(path);
+            send_response(client_socket, 250, "Directory successfully changed.");
+            return 0;
+        }
+        else
+        {
+            send_response(client_socket, 550, "Permission denied or invalid path.");
+            return -1;
+        }
+    }
+    else
+    {
+        // 相对路径
+        char *current_dir = getcwd(NULL, 0);
+        snprintf(new_dir, sizeof(new_dir), "%s/%s", current_dir, path);
+        free(current_dir);
+
+        if (is_path_safe(session->root_dir, new_dir))
+        {
+            chdir(new_dir);
+            send_response(client_socket, 250, "Directory successfully changed.");
+            return 0;
+        }
+        else
+        {
+            send_response(client_socket, 550, "Permission denied or invalid path.");
+            return -1;
+        }
+    }
+}
+
+/**
+ * 处理 PWD (Print Working Directory) 命令
+ * @param client_socket 客户端控制连接
+ * @param session 会话状态
+ * @return 0 表示成功处理, -1 表示处理失败
+ */
+int handle_pwd_command(int client_socket, connection *session)
+{
+    char cwd[PATH_MAX];
+    if (getcwd(cwd, sizeof(cwd)) != NULL)
+    {
+        char *return_cwd = (char *)malloc(strlen(cwd) + 3);
+        sprintf(return_cwd, "\"%s\"", cwd);
+        send_response(client_socket, 257, return_cwd);
+        free(return_cwd);
+        return 0;
+    }
+    else
+    {
+        send_response(client_socket, 550, "Failed to get current directory.");
+        return -1;
+    }
+}
+
+/**
+ * 处理 MKD (Make Directory) 命令
+ * @param client_socket 客户端控制连接
+ * @param session 会话状态
+ * @param dirname 客户端请求创建的目录名
+ * @return 0 表示成功处理, -1 表示处理失败
+ */
+int handle_mkd_command(int client_socket, connection *session, const char *dirname)
+{
+    char full_path[PATH_MAX];
+    char *current_dir = getcwd(NULL, 0);
+    snprintf(full_path, sizeof(full_path), "%s/%s", current_dir, dirname);
+    if (!is_path_safe(session->root_dir, full_path))
+    {
+        send_response(client_socket, 550, "Permission denied or invalid path.");
+        return -1;
+    }
+    if (mkdir(full_path, 0755) == 0)
+    {
+        char *return_path = (char *)malloc(strlen(full_path) + 3);
+        sprintf(return_path, "\"%s\"", full_path);
+        send_response(client_socket, 257, return_path);
+        free(return_path);
+        return 0;
+    }
+    else
+    {
+        send_response(client_socket, 550, "Failed to create directory.");
+        return -1;
+    }
+}
+
+/**
+ * 处理 RMD (Remove Directory) 命令
+ * @param client_socket 客户端控制连接
+ * @param session 会话状态
+ * @param dirname 客户端请求删除的目录名
+ * @return 0 表示成功处理, -1 表示处理失败
+ */
+int handle_rmd_command(int client_socket, connection *session, const char *dirname)
+{
+    char full_path[PATH_MAX];
+    char *current_dir = getcwd(NULL, 0);
+    snprintf(full_path, sizeof(full_path), "%s/%s", current_dir, dirname);
+    if (!is_path_safe(session->root_dir, full_path))
+    {
+        send_response(client_socket, 550, "Permission denied or invalid path.");
+        return -1;
+    }
+    if (rmdir(full_path) == 0)
+    {
+        send_response(client_socket, 250, "Directory removed successfully.");
+        return 0;
+    }
+    else
+    {
+        send_response(client_socket, 550, "Failed to remove directory.");
+        return -1;
+    }
+}
+
+/**
+ * 处理 LIST 命令，列出目录内容
+ * @param client_socket 客户端控制连接
+ * @param session 会话状态
+ * @param path 客户端请求列出的目录路径，可以是相对路径或绝对路径
+ * @return 0 表示成功处理, -1 表示处理失败
+ */
+// int handle_list_command(int client_socket, connection *session, const char *path)
+// {
+//     // 构建要列出的目录路径
+//     char list_path[PATH_MAX];
+//     char *current_dir = getcwd(NULL, 0);
+//     if (path[0] == '/')
+//     {
+//         // 绝对路径
+//         snprintf(list_path, sizeof(list_path), "%s", path);
+//     }
+//     else
+//     {
+//         // 相对路径
+//         snprintf(list_path, sizeof(list_path), "%s/%s", current_dir, path);
+//     }
+
+//     // 安全检查
+//     if (!is_path_safe(session->root_dir, list_path))
+//     {
+//         send_response(client_socket, 550, "Permission denied or invalid path.");
+//         return -1;
+//     }
+
+//     // 发送初始响应
+//     send_response(client_socket, 150, "Here comes the directory listing.");
+
+//     // 建立数据连接
+//     int data_socket = establish_data_connection(session);
+//     if (data_socket < 0)
+//     {
+//         send_response(client_socket, 425, "Failed to establish data connection.");
+//         return -1;
+//     }
+
+//     // 执行 ls -l 命令并将输出发送到数据连接
+//     FILE *ls_pipe = popen((char *)malloc(snprintf(NULL, 0, "ls -l \"%s\"", list_path) + 1), "r");
+//     if (ls_pipe == NULL)
+//     {
+//         close(data_socket);
+//         send_response(client_socket, 550, "Failed to list directory.");
+//         return -1;
+//     }
+
+//     char buffer[BUFFER_SIZE];
+//     size_t bytes_read;
+//     while ((bytes_read = fread(buffer, 1, sizeof(buffer), ls_pipe)) > 0)
+//     {
+//         send(data_socket, buffer, bytes_read, 0);
+//     }
+
+//     pclose(ls_pipe);
+//     close(data_socket);
+//     session->mode = DATA_CONN_MODE_NONE; // 重置数据连接模式
+
+//     // 最终响应
+//     send_response(client_socket, 226, "Directory send OK.");
+//     return 0;
+// }

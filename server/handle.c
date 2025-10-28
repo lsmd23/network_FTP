@@ -15,8 +15,9 @@ void handle_connection(int client_socket, const char *root_dir)
     connection session;
     memset(&session, 0, sizeof(session));
     session.client_data_socket = -1;
-    session.mode = DATA_CONN_MODE_NONE;                  // 初始无数据连接模式
-    strncpy(session.cwd, "./", sizeof(session.cwd) - 1); // 初始工作目录为根目录
+    session.mode = DATA_CONN_MODE_NONE;                                   // 初始无数据连接模式
+    snprintf(session.root_dir, sizeof(session.root_dir), "%s", root_dir); // 设置根目录
+    // strncpy(session.cwd, "./", sizeof(session.cwd) - 1);                  // 设置当前工作目录，初始为根目录
 
     // 发送欢迎消息
     send_response(client_socket, 220, "Anonymous FTP server ready.");
@@ -136,23 +137,23 @@ void handle_connection(int client_socket, const char *root_dir)
                 handle_stor_command(client_socket, &session, arg);
             }
 
-            // // 3.4 文件和目录操作命令处理
-            // else if (strcmp(cmd, "CWD") == 0)
-            // {
-            //     handle_cwd_command(client_socket, arg);
-            // }
-            // else if (strcmp(cmd, "PWD") == 0)
-            // {
-            //     handle_pwd_command(client_socket);
-            // }
-            // else if (strcmp(cmd, "MKD") == 0)
-            // {
-            //     handle_mkd_command(client_socket, arg);
-            // }
-            // else if (strcmp(cmd, "RMD") == 0)
-            // {
-            //     handle_rmd_command(client_socket, arg);
-            // }
+            // 3.4 文件和目录操作命令处理
+            else if (strcmp(cmd, "CWD") == 0)
+            {
+                handle_cwd_command(client_socket, &session, arg);
+            }
+            else if (strcmp(cmd, "PWD") == 0)
+            {
+                handle_pwd_command(client_socket, &session);
+            }
+            else if (strcmp(cmd, "MKD") == 0)
+            {
+                handle_mkd_command(client_socket, &session, arg);
+            }
+            else if (strcmp(cmd, "RMD") == 0)
+            {
+                handle_rmd_command(client_socket, &session, arg);
+            }
             // else if (strcmp(cmd, "LIST") == 0)
             // {
             //     handle_list_command(client_socket, &session, arg);

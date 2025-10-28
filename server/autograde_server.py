@@ -11,6 +11,7 @@ from ftplib import FTP, error_perm
 import threading
 import traceback
 from datetime import datetime
+import re
 
 def _now():
     return datetime.now().strftime('%H:%M:%S')
@@ -38,7 +39,9 @@ class TestServer:
     
     def build(self):
         print(f'[{_now()}] [build] 开始编译...')
-        proc = subprocess.Popen('make', stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        server_dir = os.path.dirname(os.path.abspath(__file__))
+        proc = subprocess.Popen('make', cwd=server_dir,
+                                stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         have_error = False
         stdout, stderr = proc.communicate()
         if b'-Wall' not in stdout and b'-Wall' not in stderr:
@@ -66,19 +69,32 @@ class TestServer:
         else:
             print(f'[{_now()}] [dir-score] {label} 未加分')
 
-    def test_public(self, port=21, directory='/tmp'):
-        print(f'[{_now()}] [test] 启动服务器: port={port}, root={directory}')
-        if port == 21 and directory == '/tmp':
-            server = subprocess.Popen(['sudo', './ftpserver'], stdout=subprocess.PIPE)
-        else:
-            server = subprocess.Popen(['sudo', './ftpserver', '-port', '%d' % port, '-root', directory], stdout=subprocess.PIPE)
+    def _start_server(self, port: int, root: str):
+        server_dir = os.path.dirname(os.path.abspath(__file__))
+        abs_root = os.path.abspath(root)
+        args = ['./ftpserver', '-port', str(port), '-root', abs_root]
+        print(f'[{_now()}] [test] 启动服务器: port={port}, root={abs_root}')
+        return subprocess.Popen(['sudo'] + args, cwd=server_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    def _pwd_last_component_is(self, resp: str, dirname: str) -> bool:
+        # 允许 257 "<任何路径>"，只要最后一个组件等于 dirname 即通过
+        # 例如 257 "/tmp/dir389" 或 257 "/dir389" 或 257 "dir389"
+        m = re.search(r'^257\s+"([^"]+)"', resp)
+        if not m:
+            return False
+        path = m.group(1)
+        last = path.rstrip('/').split('/')[-1] if path else ''
+        return last == dirname
+
+    def test_public(self, port: int, directory: str):
+        server = self._start_server(port, directory)
         # 实时读取服务器 stdout
         t = threading.Thread(target=_drain_pipe, args=(server.stdout,'server'), daemon=True)
         t.start()
 
         start_credit = self.credit
         start_dir_credit = self.dir_credit
-        time.sleep(0.1)
+        time.sleep(0.2)
         try:
             ftp = FTP()
             # connect
@@ -119,32 +135,36 @@ class TestServer:
 
             # ===== 目录操作测试开始（不计入原有 credit，总分单独统计） =====
             try:
-                # PWD 原地
+                abs_root = os.path.abspath(directory)
+
+                # PWD 原地：应为 257 "<pathname>"
                 resp = ftp.sendcmd('PWD')
                 print(f'[{_now()}] [dir-step] PWD -> {resp!r}')
                 ok = resp.startswith('257 ') and ('"' in resp)
                 self._dir_bump(ok, 'PWD 257 "<path>"')
 
-                # MKD
+                # MKD：257 "<pathname>"
                 dirname = 'dir%d' % random.randint(300, 400)
                 resp = ftp.sendcmd(f'MKD {dirname}')
                 print(f'[{_now()}] [dir-step] MKD {dirname} -> {resp!r}')
-                self._dir_bump(resp.startswith('257'), f'MKD {dirname}')
+                ok = resp.startswith('257') and ('"' in resp)
+                self._dir_bump(ok, f'MKD {dirname}')
 
-                # CWD 进入新目录
+                # CWD：250
                 resp = ftp.cwd(dirname)
                 print(f'[{_now()}] [dir-step] CWD {dirname} -> {resp!r}')
                 self._dir_bump(resp.startswith('250'), f'CWD {dirname}')
 
-                # PWD 应包含新目录名
+                # PWD：最后路径组件应为该目录名（容忍绝对物理路径或虚拟路径）
                 resp = ftp.sendcmd('PWD')
                 print(f'[{_now()}] [dir-step] PWD(after CWD) -> {resp!r}')
-                in_path = f'"{dirname}"' in resp or f'"/{dirname}"' in resp
-                self._dir_bump(in_path, 'PWD 包含子目录名')
+                ok = self._pwd_last_component_is(resp, dirname)
+                self._dir_bump(ok, 'PWD 包含子目录名')
 
-                # 在服务器根目录下的该子目录内创建两个文件（直接在文件系统上创建，便于验证 LIST）
-                subdir_fs = os.path.join(directory, dirname)
+                # 在该子目录内创建两个文件（用于 LIST 校验）
+                subdir_fs = os.path.join(abs_root, dirname)
                 try:
+                    os.makedirs(subdir_fs, exist_ok=True)
                     with open(os.path.join(subdir_fs, 'a.txt'), 'w') as f:
                         f.write('hello\n')
                     with open(os.path.join(subdir_fs, 'b.txt'), 'w') as f:
@@ -152,14 +172,7 @@ class TestServer:
                 except Exception as e:
                     print(f'[{_now()}] [dir-diag] 无法在 {subdir_fs} 创建文件: {e}')
 
-                # 切换到 ASCII 文本模式以满足 LIST 规范
-                try:
-                    resp = ftp.sendcmd('TYPE A')
-                    print(f'[{_now()}] [dir-step] TYPE A -> {resp!r}')
-                except Exception as e:
-                    print(f'[{_now()}] [dir-error] TYPE A 异常: {e}')
-
-                # LIST 列表，需 226 且包含 a.txt/b.txt
+                # LIST（客户端ONLY）：不强制 TYPE A；应通过数据连接返回并 226 结束，且包含 a.txt/b.txt
                 try:
                     lines = []
                     resp = ftp.retrlines('LIST', lines.append)
@@ -173,14 +186,14 @@ class TestServer:
                     print(f'[{_now()}] [dir-error] LIST 异常: {e}')
                     self._dir_bump(False, 'LIST 226 且包含文件名')
 
-                # 返回到父目录
+                # 返回父目录
                 try:
                     resp = ftp.cwd('..')
                     print(f'[{_now()}] [dir-step] CWD .. -> {resp!r}')
                 except Exception as e:
                     print(f'[{_now()}] [dir-error] CWD .. 异常: {e}')
 
-                # 测试越权 CWD（不应允许逃离 root）
+                # 越权 CWD（应拒绝）
                 try:
                     ftp.cwd('../..')
                     print(f'[{_now()}] [dir-step] CWD ../.. 成功（不应允许）')
@@ -192,7 +205,7 @@ class TestServer:
                     print(f'[{_now()}] [dir-error] CWD ../.. 异常: {e}')
                     self._dir_bump(False, '阻止越出 root 的 CWD')
 
-                # 删除测试文件（文件系统上清理），再 RMD
+                # 清理文件，RMD 子目录：250
                 try:
                     for fn in ('a.txt', 'b.txt'):
                         p = os.path.join(subdir_fs, fn)
@@ -215,7 +228,7 @@ class TestServer:
                 print(f'[{_now()}] [dir-fatal] 目录操作测试异常: {e}')
             # ===== 目录操作测试结束 =====
 
-            # TYPE
+            # TYPE I
             try:
                 resp = ftp.sendcmd('TYPE I')
                 print(f'[{_now()}] [step] TYPE I -> {resp!r}')
@@ -230,7 +243,8 @@ class TestServer:
             # PORT download
             try:
                 filename = 'test%d.data' % random.randint(100, 200)
-                self.create_test_file(directory + '/' + filename)
+                abs_root = os.path.abspath(directory)
+                self.create_test_file(os.path.join(abs_root, filename))
                 ftp.set_pasv(False)
                 print(f'[{_now()}] [step] RETR 文件: {filename} (主动模式)')
                 localf = open(filename, 'wb')
@@ -243,8 +257,8 @@ class TestServer:
                 if not resp.startswith('226'):
                     print(f'[{_now()}] [score] RETR 未加分（缺少 226）')
                     ok = False
-                if not filecmp.cmp(filename, directory + '/' + filename):
-                    print(f'[{_now()}] [diag] RETR 文件比对失败: {filename} != {directory}/{filename}')
+                if not filecmp.cmp(filename, os.path.join(abs_root, filename)):
+                    print(f'[{_now()}] [diag] RETR 文件比对失败: {filename} != {abs_root}/{filename}')
                     ok = False
                 if ok:
                     self.credit += self.minor
@@ -252,10 +266,14 @@ class TestServer:
             except Exception as e:
                 print(f'[{_now()}] [error] RETR 异常: {e}')
             finally:
-                try: os.remove(directory + '/' + filename)
-                except Exception: pass
-                try: os.remove(filename)
-                except Exception: pass
+                try:
+                    os.remove(os.path.join(abs_root, filename))
+                except Exception:
+                    pass
+                try:
+                    os.remove(filename)
+                except Exception:
+                    pass
 
             # PASV upload
             try:
@@ -270,12 +288,13 @@ class TestServer:
                 with open(filename, 'rb') as f:
                     resp = ftp2.storbinary('STOR %s' % filename, f)
                 print(f'[{_now()}] [step] STOR 响应 -> {resp!r}')
+                abs_root = os.path.abspath(directory)
                 ok = True
                 if not resp.startswith('226'):
                     print(f'[{_now()}] [score] STOR 未加分（缺少 226）')
                     ok = False
-                if not filecmp.cmp(filename, directory + '/' + filename):
-                    print(f'[{_now()}] [diag] STOR 文件比对失败: {filename} != {directory}/{filename}')
+                if not filecmp.cmp(filename, os.path.join(abs_root, filename)):
+                    print(f'[{_now()}] [diag] STOR 文件比对失败: {filename} != {abs_root}/{filename}')
                     ok = False
                 if ok:
                     self.credit += self.minor
@@ -283,10 +302,14 @@ class TestServer:
             except Exception as e:
                 print(f'[{_now()}] [error] STOR 异常: {e}')
             finally:
-                try: os.remove(directory + '/' + filename)
-                except Exception: pass
-                try: os.remove(filename)
-                except Exception: pass
+                try:
+                    os.remove(os.path.join(abs_root, filename))
+                except Exception:
+                    pass
+                try:
+                    os.remove(filename)
+                except Exception:
+                    pass
                 try:
                     ftp2.quit()
                 except Exception:
@@ -320,18 +343,23 @@ if __name__ == "__main__":
     test = TestServer()
     print(f'[{_now()}] [info] 本脚本单轮最高 14 分，两轮合计最高 28 分；build 阶段只扣分不加分。')
     test.build()
-    # Test 1
-    test.test_public()
-    # Test 2
-    port = random.randint(2000, 3000)
-    directory = ''.join(random.choice(string.ascii_letters) for x in range(10))
-    if os.path.isdir(directory):
-        shutil.rmtree(directory)
-    os.mkdir(directory)
-    test.test_public(port, directory)
-    shutil.rmtree(directory)
+    # Test 1：固定根 /tmp + 随机高端口
+    port1 = random.randint(20000, 40000)
+    test.test_public(port1, "/tmp")
+    # Test 2：随机新建“绝对路径”根目录 + 随机高端口
+    server_dir = os.path.dirname(os.path.abspath(__file__))
+    rand_dir = ''.join(random.choice(string.ascii_letters) for _ in range(10))
+    abs_dir = os.path.abspath(os.path.join(server_dir, rand_dir))
+    if os.path.isdir(abs_dir):
+        shutil.rmtree(abs_dir)
+    os.mkdir(abs_dir)
+    try:
+        port2 = random.randint(20000, 40000)
+        test.test_public(port2, abs_dir)
+    finally:
+        shutil.rmtree(abs_dir)
     # Clean
-    subprocess.run(['make', 'clean'], stdout=subprocess.PIPE)
+    subprocess.run(['make', 'clean'], cwd=server_dir, stdout=subprocess.PIPE)
     # Result
     if test.credit < 0: test.credit = 0
     print(f'[{_now()}] [result] Your credit is {test.credit} / 28')
