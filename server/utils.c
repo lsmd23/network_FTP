@@ -62,22 +62,23 @@ int read_line(int client_socket, char *buffer, size_t max_len)
     {
         char ch;
         ssize_t bytes_read = recv(client_socket, &ch, 1, 0);
-        if (bytes_read <= 0)
+        if (bytes_read < 0)
         {
             perror("recv failed");
             return -1;
         }
+        if (bytes_read == 0)
+        {
+            // 对端正常关闭，不打印 perror
+            return -1;
+        }
         if (ch == '\n')
-        {
-            break; // 行结束
-        }
-        if (ch != '\r') // 忽略回车符
-        {
+            break;
+        if (ch != '\r')
             buffer[total_read++] = ch;
-        }
     }
-    buffer[total_read] = '\0'; // 添加字符串结束符
-    return total_read;
+    buffer[total_read] = '\0';
+    return (int)total_read;
 }
 
 /**

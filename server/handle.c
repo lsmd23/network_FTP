@@ -58,9 +58,12 @@ void handle_connection(int client_socket)
             {
                 if (awaiting_password == 1)
                 {
-                    // 接受一个简单的邮箱格式作为密码
+                    // // 接受一个简单的邮箱格式作为密码
+                    // regex_t regex;
+                    // regcomp(&regex, "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$", REG_EXTENDED);
+                    // 接受任何字符串作为密码
                     regex_t regex;
-                    regcomp(&regex, "^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$", REG_EXTENDED);
+                    regcomp(&regex, "^.+$", REG_EXTENDED);
                     if (regexec(&regex, arg, 0, NULL, 0) == 0)
                     {
 

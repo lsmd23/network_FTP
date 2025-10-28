@@ -2,3 +2,4 @@
 .vscode/
 ftpserver
 *.o
+*.data

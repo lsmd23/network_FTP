@@ -42,9 +42,9 @@ class TestServer:
 
     def test_public(self, port=21, directory='/tmp'):
         if port == 21 and directory == '/tmp':
-            server = subprocess.Popen(['sudo', './server'], stdout=subprocess.PIPE)
+            server = subprocess.Popen(['sudo', './ftpserver'], stdout=subprocess.PIPE)
         else:
-            server = subprocess.Popen(['sudo', './server', '-port', '%d' % port, '-root', directory], stdout=subprocess.PIPE)
+            server = subprocess.Popen(['sudo', './ftpserver', '-port', '%d' % port, '-root', directory], stdout=subprocess.PIPE)
         time.sleep(0.1)
         try:
             ftp = FTP()

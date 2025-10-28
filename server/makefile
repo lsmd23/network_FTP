@@ -12,7 +12,7 @@ CFLAGS = -g -Wall -Isrc
 LDFLAGS =
 
 # 源文件目录
-SRCDIR = src
+SRCDIR = .
 
 # 目标文件（可执行文件）的名称
 TARGET = ftpserver

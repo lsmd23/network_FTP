@@ -10,7 +10,7 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 
-#define CONTROL_PORT 10021   // 控制连接端口
+#define CONTROL_PORT 21      // 控制连接端口
 #define WAITING_QUEUE_SIZE 5 // 监听队列大小
 #define LINE_MAX_SIZE 1024   // 最大行长度
 

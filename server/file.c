@@ -9,7 +9,7 @@
  * @param path 要检查的路径
  * @return 如果路径安全则返回1，否则返回0
  */
-static int is_path_safe(const char *path)
+int is_path_safe(const char *path)
 {
     // strtok会修改字符串，所以我们必须在副本上操作
     char *path_copy = strdup(path);
@@ -61,14 +61,19 @@ static int is_path_safe(const char *path)
  */
 int handle_retr_command(int client_socket, connection *session, const char *filename)
 {
-    if (!is_path_safe(filename))
+    char full_path[PATH_MAX];
+    int len = snprintf(full_path, sizeof(full_path), "%s/%s", FTP_ROOT_DIR, filename);
+    if (len < 0 || len >= (int)sizeof(full_path))
+    {
+        send_response(client_socket, 550, "Filename is too long.");
+        return -1;
+    }
+    if (!is_path_safe(full_path))
     {
         send_response(client_socket, 550, "Permission denied or invalid path.");
         return -1;
     }
-
-    // 检查文件，尝试打开
-    int file_fd = open(filename, O_RDONLY);
+    int file_fd = open(full_path, O_RDONLY);
     if (file_fd < 0)
     {
         send_response(client_socket, 550, "Failed to open file.");
@@ -93,11 +98,19 @@ int handle_retr_command(int client_socket, connection *session, const char *file
     int transfer_ok = 1; // 传输状态标志
     while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0)
     {
-        if (write(data_socket, buffer, bytes_read) != bytes_read)
+        ssize_t sent_bytes = 0;
+        while (sent_bytes < bytes_read)
         {
-            transfer_ok = 0; // 写入失败
-            break;
+            ssize_t n = send(data_socket, buffer + sent_bytes, bytes_read - sent_bytes, 0);
+            if (n < 0)
+            {
+                transfer_ok = 0; // 发送失败
+                break;
+            }
+            sent_bytes += n;
         }
+        if (!transfer_ok)
+            break; // 退出外层循环
     }
 
     if (bytes_read < 0)
