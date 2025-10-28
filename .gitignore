@@ -4,3 +4,7 @@ ftpserver
 *.o
 *.data
 test_*
+client/build/
+client/dist/
+*.spec
+*.log
