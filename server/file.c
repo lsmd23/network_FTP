@@ -3,6 +3,134 @@
 #include <fcntl.h>
 
 /**
+ * 确保会话的当前工作目录已初始化
+ * 如果未初始化，则设置为根目录 "/"
+ * @param session 会话指针
+ */
+// static void ensure_session_cwd(connection *session)
+// {
+//     if (session == NULL)
+//         return;
+//     if (session->cwd[0] == '\0')
+//     {
+//         session->cwd[0] = '/';
+//         session->cwd[1] = '\0';
+//     }
+// }
+
+// /**
+//  * 规范化虚拟路径，处理 . 和 .. 组件
+//  * @param base 当前工作目录
+//  * @param input 输入路径（可能是相对或绝对路径）
+//  * @param out 输出缓冲区，用于存储规范化后的路径
+//  * @param outsz 输出缓冲区大小
+//  */
+// static void normalize_virtual_path(const char *base, const char *input, char *out, size_t outsz)
+// {
+//     // 选择起点：绝对路径用根 /，相对路径用 base
+//     const char *use_base = (input && input[0] == '/') ? "/" : (base && base[0] ? base : "/");
+
+//     // 合并 base 与 input
+//     char joined[PATH_MAX * 2];
+//     if (input && input[0] == '/')
+//     {
+//         snprintf(joined, sizeof(joined), "%s", input);
+//     }
+//     else if (input && input[0] != '\0')
+//     {
+//         if (strcmp(use_base, "/") == 0)
+//             snprintf(joined, sizeof(joined), "/%s", input);
+//         else
+//             snprintf(joined, sizeof(joined), "%s/%s", use_base, input);
+//     }
+//     else
+//     {
+//         snprintf(joined, sizeof(joined), "%s", use_base);
+//     }
+
+//     // 分词并用栈处理 . 和 ..
+//     char buf[PATH_MAX * 2];
+//     snprintf(buf, sizeof(buf), "%s", joined);
+
+//     char *stack[PATH_MAX / 2];
+//     int top = 0;
+
+//     for (char *tok = strtok(buf, "/"); tok; tok = strtok(NULL, "/"))
+//     {
+//         if (strcmp(tok, ".") == 0 || tok[0] == '\0')
+//         {
+//             continue;
+//         }
+//         else if (strcmp(tok, "..") == 0)
+//         {
+//             if (top > 0)
+//                 top--; // 不允许超出根
+//         }
+//         else
+//         {
+//             stack[top++] = tok;
+//         }
+//     }
+
+//     // 生成标准化虚拟路径
+//     if (top == 0)
+//     {
+//         snprintf(out, outsz, "/");
+//         return;
+//     }
+//     size_t pos = 0;
+//     out[0] = '\0';
+//     for (int i = 0; i < top; ++i)
+//     {
+//         int n = snprintf(out + pos, (pos < outsz ? outsz - pos : 0), "%s%s", (i == 0 ? "/" : "/"), stack[i]);
+//         if (n < 0)
+//             break;
+//         pos += (size_t)n;
+//         if (pos >= outsz)
+//             break;
+//     }
+//     if (pos >= outsz && outsz > 0)
+//         out[outsz - 1] = '\0';
+// }
+
+// /**
+//  * 将虚拟路径转换为文件系统路径：FTP根目录 + 虚拟路径
+//  * @param vpath 虚拟路径（必须以 / 开头），也即规范化后的路径
+//  * @param out 输出缓冲区，用于存储文件系统路径
+//  * @param outsz 输出缓冲区大小
+//  */
+// static int vpath_to_fspath(const char *vpath, char *out, size_t outsz)
+// {
+//     if (!vpath || vpath[0] != '/')
+//         return -1;
+//     if (strcmp(vpath, "/") == 0)
+//     {
+//         int n = snprintf(out, outsz, "%s", FTP_ROOT_DIR);
+//         return (n < 0 || n >= (int)outsz) ? -1 : 0;
+//     }
+//     int n = snprintf(out, outsz, "%s%s", FTP_ROOT_DIR, vpath);
+//     return (n < 0 || n >= (int)outsz) ? -1 : 0;
+// }
+
+// /**
+//  * 检查给定的文件系统路径是否在FTP根目录下
+//  * @param fspath 文件系统路径
+//  * @param real_out 输出缓冲区，用于存储解析后的真实路径
+//  * @param outsz 输出缓冲区大小
+//  */
+// static int safe_realpath_existing(const char *fspath, char *real_out, size_t outsz)
+// {
+//     char realbuf[PATH_MAX];
+//     if (!realpath(fspath, realbuf))
+//         return -1;
+//     size_t rootlen = strlen(FTP_ROOT_DIR);
+//     if (strncmp(realbuf, FTP_ROOT_DIR, rootlen) != 0)
+//         return -1;
+//     int n = snprintf(real_out, outsz, "%s", realbuf);
+//     return (n < 0 || n >= (int)outsz) ? -1 : 0;
+// }
+
+/**
  * 检查给定路径是否在FTP根目录下，通过模拟路径解析来防止目录遍历。
  * 规则：路径在解析过程中，深度不能为负数。
  *    例如 "dir/.." 是合法的 (深度 1 -> 0), 但 "../dir" 是非法的 (深度 0 -> -1)。
@@ -62,7 +190,7 @@ int is_path_safe(const char *path)
 int handle_retr_command(int client_socket, connection *session, const char *filename)
 {
     char full_path[PATH_MAX];
-    int len = snprintf(full_path, sizeof(full_path), "%s/%s", FTP_ROOT_DIR, filename);
+    int len = snprintf(full_path, sizeof(full_path), "%s/%s", session->cwd, filename);
     if (len < 0 || len >= (int)sizeof(full_path))
     {
         send_response(client_socket, 550, "Filename is too long.");

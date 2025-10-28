@@ -5,7 +5,7 @@
 #include <regex.h>
 
 // 处理每一个来自客户端的连接
-void handle_connection(int client_socket)
+void handle_connection(int client_socket, const char *root_dir)
 {
     int logged_in = 0;                                      // 登录状态标志
     int awaiting_password = 0;                              // 等待密码标志
@@ -15,7 +15,8 @@ void handle_connection(int client_socket)
     connection session;
     memset(&session, 0, sizeof(session));
     session.client_data_socket = -1;
-    session.mode = DATA_CONN_MODE_NONE; // 初始无数据连接模式
+    session.mode = DATA_CONN_MODE_NONE;                  // 初始无数据连接模式
+    strncpy(session.cwd, "./", sizeof(session.cwd) - 1); // 初始工作目录为根目录
 
     // 发送欢迎消息
     send_response(client_socket, 220, "Anonymous FTP server ready.");
@@ -135,6 +136,28 @@ void handle_connection(int client_socket)
                 handle_stor_command(client_socket, &session, arg);
             }
 
+            // // 3.4 文件和目录操作命令处理
+            // else if (strcmp(cmd, "CWD") == 0)
+            // {
+            //     handle_cwd_command(client_socket, arg);
+            // }
+            // else if (strcmp(cmd, "PWD") == 0)
+            // {
+            //     handle_pwd_command(client_socket);
+            // }
+            // else if (strcmp(cmd, "MKD") == 0)
+            // {
+            //     handle_mkd_command(client_socket, arg);
+            // }
+            // else if (strcmp(cmd, "RMD") == 0)
+            // {
+            //     handle_rmd_command(client_socket, arg);
+            // }
+            // else if (strcmp(cmd, "LIST") == 0)
+            // {
+            //     handle_list_command(client_socket, &session, arg);
+            // }
+
             // 3.5 其他系统命令处理
             else if (strcmp(cmd, "SYST") == 0)
             {
@@ -163,7 +186,6 @@ void handle_connection(int client_socket)
                 // 对于其他未实现的命令
                 send_response(client_socket, 500, "Command not implemented.");
             }
-            // TODO: 处理其他FTP命令，如 LIST, RETR, STOR 等
         }
     }
 }

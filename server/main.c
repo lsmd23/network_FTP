@@ -13,7 +13,7 @@ int main(int argc, char **argv)
 
     // 解析命令行参数
     int port = CONTROL_PORT; // 默认控制端口21
-    char root_dir[PATH_MAX];
+    char root_dir[PATH_MAX]; // 服务器根目录，也即FTP应当工作的根目录
     // 默认根目录与测试一致：/tmp（首轮不传 -root）
     strncpy(root_dir, "/tmp", sizeof(root_dir) - 1);
     root_dir[sizeof(root_dir) - 1] = '\0';
@@ -89,7 +89,7 @@ int main(int argc, char **argv)
         {
             // 子进程：处理一个连接
             close(listen_socket);
-            handle_connection(connected_socket);
+            handle_connection(connected_socket, root_dir);
             close(connected_socket);
             _exit(0);
         }
