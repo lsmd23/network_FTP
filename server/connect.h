@@ -15,7 +15,7 @@ typedef struct
     struct sockaddr_in data_addr; // 客户端数据连接地址
     data_conn_mode_t mode;        // 数据连接模式
     char root_dir[PATH_MAX];      // FTP服务器根目录
-    // char cwd[PATH_MAX];           // 当前工作目录
+    int bytes_transferred;        // 传输的字节数
 } connection;
 
 int handle_port_command(int client_socket, const char *arg, connection *session);

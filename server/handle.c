@@ -17,7 +17,7 @@ void handle_connection(int client_socket, const char *root_dir)
     session.client_data_socket = -1;
     session.mode = DATA_CONN_MODE_NONE;                                   // 初始无数据连接模式
     snprintf(session.root_dir, sizeof(session.root_dir), "%s", root_dir); // 设置根目录
-    // strncpy(session.cwd, "./", sizeof(session.cwd) - 1);                  // 设置当前工作目录，初始为根目录
+    session.bytes_transferred = 0;                                        // 初始化传输字节数为0
 
     // 发送欢迎消息
     send_response(client_socket, 220, "Anonymous FTP server ready.");
@@ -178,9 +178,15 @@ void handle_connection(int client_socket, const char *root_dir)
             }
             else if (strcmp(cmd, "QUIT") == 0)
             {
-                send_response(client_socket, 221, "Goodbye.");
-                break; // 退出循环，这将导致子进程结束，从而关闭连接
-                // TODO: 可以统计一下其它的数据在这里一并返回
+
+                char bytes_msg[64];
+                snprintf(bytes_msg, sizeof(bytes_msg), "Total bytes transferred: %d", session.bytes_transferred);
+                const char *lines[] = {
+                    "Goodbye.",
+                    bytes_msg,
+                    NULL};
+                send_multiline_response(client_socket, 221, lines); // 统计传输字节数并发送
+                break;                                              // 退出循环，这将导致子进程结束，从而关闭连接
             }
             else
             {

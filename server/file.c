@@ -138,6 +138,7 @@ int handle_retr_command(int client_socket, connection *session, const char *file
     char buffer[BUFFER_SIZE];
     ssize_t bytes_read;
     int transfer_ok = 1; // 传输状态标志
+    ssize_t total_sent = 0;
     while ((bytes_read = read(file_fd, buffer, sizeof(buffer))) > 0)
     {
         ssize_t sent_bytes = 0;
@@ -151,8 +152,10 @@ int handle_retr_command(int client_socket, connection *session, const char *file
             }
             sent_bytes += n;
         }
-        if (!transfer_ok)
-            break; // 退出外层循环
+        if (!transfer_ok) // 发送失败
+            break;        // 退出外层循环
+
+        total_sent += bytes_read;
     }
 
     if (bytes_read < 0)
@@ -168,6 +171,7 @@ int handle_retr_command(int client_socket, connection *session, const char *file
     // 最终响应
     if (transfer_ok)
     {
+        session->bytes_transferred += (int)total_sent; // 统计已传输字节数
         send_response(client_socket, 226, "Transfer complete.");
         return 0;
     }
@@ -251,6 +255,7 @@ int handle_stor_command(int client_socket, connection *session, const char *file
     // 7. 发送最终响应
     if (transfer_ok)
     {
+        session->bytes_transferred += bytes_read; // 统计已传输字节数
         send_response(client_socket, 226, "Transfer complete.");
     }
     else
