@@ -8,3 +8,7 @@ client/build/
 client/dist/
 *.spec
 *.log
+*.aux
+*.out
+*.gz
+*.toc
