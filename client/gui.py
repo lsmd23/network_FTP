@@ -81,16 +81,18 @@ class FTPGuiClient(QWidget):
         self.log_display.append(f'>>> 正在尝试连接到 {ip}:{port} ...')
 
         self.client_process = QProcess(self)
+        self.client_process.setWorkingDirectory(os.path.dirname(__file__))  # 设置工作目录
         self.client_process.readyReadStandardOutput.connect(self.handle_stdout)
         self.client_process.readyReadStandardError.connect(self.handle_stderr)
         self.client_process.finished.connect(self.process_finished)
 
-        # --- 核心修改 ---
-        # 构造启动命令。因为 gui.py 和 client.py 在同一目录下，可以直接引用。
-        client_script_path = os.path.join(os.path.dirname(__file__), 'client.py')
-        program = sys.executable  # 使用当前 Python 解释器，跨平台更稳
-        args = [client_script_path, '-ip', ip, '-port', port]
-        self.client_process.start(program, args)
+        client_executable_path = os.path.join(os.path.dirname(__file__), 'client')
+        if not os.path.exists(client_executable_path):
+            QMessageBox.critical(self, '错误', f'未找到命令行程序: {client_executable_path}')
+            return
+
+        args = ['-ip', ip, '-port', port]
+        self.client_process.start(client_executable_path, args)
         
         self.connect_button.setEnabled(False)
         self.disconnect_button.setEnabled(True)
